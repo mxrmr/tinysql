@@ -52,7 +52,7 @@ func (s *Stmt) bindArgs(args ...any) error {
 	C.sqlite3_reset(s.ptr)
 	for idx, arg := range args {
 		var err C.int
-		argNum := C.int(idx+1)
+		argNum := C.int(idx + 1)
 		switch typedArg := arg.(type) {
 		case int:
 			err = C.sqlite3_bind_int(s.ptr, argNum, C.int(typedArg))
