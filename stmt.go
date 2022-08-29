@@ -11,6 +11,7 @@ import (
 )
 
 type Stmt struct {
+	db  *DB
 	ptr *C.sqlite3_stmt
 }
 
@@ -21,9 +22,9 @@ func prepareStmt(db *DB, sql string) (*Stmt, error) {
 	var stmt *C.sqlite3_stmt
 	res := C.sqlite3_prepare_v2(db.ptr, csql, -1, &stmt, nil)
 	if res != C.SQLITE_OK {
-		return nil, makeError(res)
+		return nil, db.makeError(res)
 	}
-	return &Stmt{stmt}, nil
+	return &Stmt{db, stmt}, nil
 }
 
 func (s *Stmt) Close() {
@@ -35,7 +36,7 @@ func (s *Stmt) Exec(args ...any) error {
 		return err
 	}
 	if res := C.sqlite3_step(s.ptr); res != C.SQLITE_DONE {
-		return makeError(res)
+		return s.db.makeError(res)
 	}
 	return nil
 }
@@ -44,7 +45,7 @@ func (s *Stmt) Query(args ...any) (*Rows, error) {
 	if err := s.bindArgs(args...); err != nil {
 		return nil, err
 	}
-	return &Rows{s.ptr, nil}, nil
+	return &Rows{s, nil}, nil
 }
 
 func (s *Stmt) bindArgs(args ...any) error {
@@ -77,25 +78,25 @@ func (s *Stmt) bindArgs(args ...any) error {
 			panic("unsupported type")
 		}
 		if err != C.SQLITE_OK {
-			return makeError(err)
+			return s.db.makeError(err)
 		}
 	}
 	return nil
 }
 
 type Rows struct {
-	ptr *C.sqlite3_stmt
+	s   *Stmt
 	err error
 }
 
 func (rs *Rows) Next() bool {
-	switch res := C.sqlite3_step(rs.ptr); res {
+	switch res := C.sqlite3_step(rs.s.ptr); res {
 	case C.SQLITE_ROW:
 		return true
 	case C.SQLITE_DONE:
 		return false
 	default:
-		rs.err = makeError(res)
+		rs.err = rs.s.db.makeError(res)
 		return false
 	}
 }
@@ -109,18 +110,18 @@ func (rs *Rows) Scan(dest ...any) error {
 		argIdx := C.int(idx)
 		switch typedDst := dst.(type) {
 		case *string:
-			cVal := C.sqlite3_column_text(rs.ptr, argIdx)
+			cVal := C.sqlite3_column_text(rs.s.ptr, argIdx)
 			if cVal == nil {
 				*typedDst = ""
 			} else {
 				*typedDst = C.GoString(C.const_char_cast(cVal))
 			}
 		case *int:
-			cVal := C.sqlite3_column_int64(rs.ptr, argIdx)
+			cVal := C.sqlite3_column_int64(rs.s.ptr, argIdx)
 			*typedDst = int(cVal)
 		case *[]byte:
-			cVal := C.sqlite3_column_blob(rs.ptr, argIdx)
-			cLen := C.sqlite3_column_bytes(rs.ptr, argIdx)
+			cVal := C.sqlite3_column_blob(rs.s.ptr, argIdx)
+			cLen := C.sqlite3_column_bytes(rs.s.ptr, argIdx)
 			*typedDst = C.GoBytes(cVal, cLen)
 		default:
 			panic("unsupported type")

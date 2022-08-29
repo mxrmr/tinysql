@@ -46,7 +46,7 @@ func (db *DB) Exec(sql string) error {
 
 	res := C.sqlite3_exec(db.ptr, cSQL, nil, nil, nil)
 	if res != C.SQLITE_OK {
-		return makeError(res)
+		return db.makeError(res)
 	}
 	return nil
 }
